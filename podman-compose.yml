@@ -16,9 +16,7 @@ services:
       - MYSQL_USER=seonaut
       - MYSQL_PASSWORD=seonaut
     volumes:
-      - ./db:/docker-entrypoint-initdb.d
       - ./my-resolve.cnf:/etc/mysql/conf.d/my-resolve.cnf:ro
-      - mariadb_data:/var/lib/mysql
     dns: 10.89.0.1
     networks:
       seonet:
@@ -57,6 +55,3 @@ networks:
     driver: bridge
     config:
       - subnet: 10.89.0.0/24
-
-volumes:
-  mariadb_data:
