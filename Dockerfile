@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine3.18 AS builder
+FROM docker.io/golang:1.21-alpine3.18 AS builder
 
 RUN mkdir /app
 ADD . /app
@@ -6,7 +6,7 @@ WORKDIR /app
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o seonaut cmd/server/main.go
 
-FROM node:18-alpine3.18 AS front
+FROM docker.io/node:18-alpine3.18 AS front
 WORKDIR /home/node
 COPY --from=builder /app ./app/
 RUN npm install --save-exact esbuild && ./node_modules/esbuild/bin/esbuild ./app/web/css/style.css \
@@ -17,7 +17,7 @@ RUN npm install --save-exact esbuild && ./node_modules/esbuild/bin/esbuild ./app
 	--loader:.woff=file \
 	--loader:.woff2=file
 
-FROM alpine:latest AS production
+FROM docker.io/alpine:latest AS production
 COPY --from=front /home/node/app /app/
 
 ENV WAIT_VERSION 2.9.0
