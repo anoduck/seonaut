@@ -1,0 +1,62 @@
+version: "3.8"
+
+services:
+  db:
+    image: docker.io/mariadb:latest
+    container_name: seonautdb
+    ports:
+      - "3306:3306"
+    hostname: db
+    extra_hosts:
+      - "app:10.89.0.2"
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=seonaut
+      - MYSQL_USER=seonaut
+      - MYSQL_PASSWORD=seonaut
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d
+      - ./my-resolve.cnf:/etc/mysql/conf.d/my-resolve.cnf:ro
+      - mariadb_data:/var/lib/mysql
+    dns: 10.89.0.1
+    networks:
+      seonet:
+        aliases:
+          - db
+        ipv4_address: 10.89.0.3
+
+  app:
+    build: .
+    image: localhost/seonaut_app:latest
+    container_name: seonaut
+    ports:
+      - "9000:9000"
+    expose:
+      - 9000
+    extra_hosts:
+      - "db:10.89.0.3"
+    hostname: app
+    depends_on:
+      - db
+    command: sh -c "/bin/wait && /app/seonaut"
+    environment:
+      - WAIT_HOSTS=db:3306
+      - WAIT_TIMEOUT=300
+      - WAIT_SLEEP_INTERVAL=30
+      - WAIT_HOST_CONNECT_TIMEOUT=30    
+    dns: 10.89.0.1
+    networks:
+      seonet:
+        aliases:
+          - app
+        ipv4_address: 10.89.0.2
+
+networks:
+  seonet:
+    driver: bridge
+    config:
+      - subnet: 10.89.0.0/24
+
+volumes:
+  mariadb_data:
