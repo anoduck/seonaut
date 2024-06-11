@@ -17,7 +17,8 @@ services:
       - MYSQL_PASSWORD=seonaut
     volumes:
       - ./my-resolve.cnf:/etc/mysql/conf.d/my-resolve.cnf:ro
-    dns: 10.89.0.1
+    dns: 9.9.9.9
+    dns_search: demeter.anoduck.com
     networks:
       seonet:
         aliases:
@@ -43,7 +44,8 @@ services:
       - WAIT_TIMEOUT=300
       - WAIT_SLEEP_INTERVAL=30
       - WAIT_HOST_CONNECT_TIMEOUT=30    
-    dns: 10.89.0.1
+    dns: 9.9.9.9
+    dns_search: demeter.anoduck.com
     networks:
       seonet:
         aliases:
@@ -52,6 +54,9 @@ services:
 
 networks:
   seonet:
-    driver: bridge
-    config:
+    ipam:
+      driver: default
+      config:
       - subnet: 10.89.0.0/24
+        iprange: 10.89.0.0/28
+        gateway: 10.89.0.254
