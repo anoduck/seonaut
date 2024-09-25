@@ -2,149 +2,141 @@ package crawler
 
 import (
 	"context"
-	"log"
+	"errors"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
-
-	"github.com/stjudewashere/seonaut/internal/models"
-	"golang.org/x/net/html"
+	"time"
 )
 
-type Options struct {
-	MaxPageReports     int
-	IgnoreRobotsTxt    bool
-	FollowNofollow     bool
-	IncludeNoindex     bool
-	UserAgent          string
-	CrawlSitemap       bool
-	AllowSubdomains    bool
-	BasicAuth          bool
-	AuthUser           string
-	AuthPass           string
-	CheckExternalLinks bool
+type Method int
+
+const (
+	// Supported HTTP methods.
+	GET Method = iota
+	HEAD
+
+	// Random delay in milliseconds.
+	// A random delay up to this value is introduced before new HTTP requests.
+	randomDelay = 1500
+
+	// Number of threads a queue will use to crawl a project.
+	consumerThreads = 2
+
+	// Crawler timeout in hours.
+	crawlerTimeout = 2
+)
+
+var ErrBlockedByRobotstxt = errors.New("blocked by robots.txt")
+var ErrVisited = errors.New("URL already visited")
+var ErrDomainNotAllowed = errors.New("domain not allowed")
+
+type Client interface {
+	Get(urlStr string) (*ClientResponse, error)
+	Head(urlStr string) (*ClientResponse, error)
+	GetUA() string
 }
 
-type CrawlerClient interface {
-	Get(u string) (*http.Response, error)
-	Head(u string) (*http.Response, error)
-	Do(req *http.Request) (*http.Response, error)
+type ResponseCallback func(r *ResponseMessage)
+
+type Options struct {
+	CrawlLimit      int
+	IgnoreRobotsTxt bool
+	FollowNofollow  bool
+	IncludeNoindex  bool
+	CrawlSitemap    bool
+	AllowSubdomains bool
+}
+
+type Status struct {
+	Crawled    int
+	Crawling   bool
+	Discovered int
 }
 
 type Crawler struct {
-	url                 *url.URL
-	options             *Options
-	queue               *Queue
-	storage             *URLStorage
-	sitemapStorage      *URLStorage
-	sitemapChecker      *SitemapChecker
-	sitemapExists       bool
-	sitemapIsBlocked    bool
-	sitemaps            []string
-	responseCounter     int
-	robotsChecker       *RobotsChecker
-	prStream            chan *models.PageReportMessage
-	allowedDomains      map[string]bool
-	mainDomain          string
-	httpCrawler         *HttpCrawler
-	qStream             chan *RequestMessage
-	cancel              context.CancelFunc
-	crawling            bool
-	crawlLock           sync.RWMutex
-	client              CrawlerClient
-	externalLinksStatus map[string]int
+	status           Status
+	url              *url.URL
+	options          *Options
+	queue            *Queue
+	storage          *URLStorage
+	sitemapStorage   *URLStorage
+	sitemapChecker   *SitemapChecker
+	sitemapExists    bool
+	sitemapIsBlocked bool
+	sitemaps         []string
+	robotsChecker    *RobotsChecker
+	allowedDomains   map[string]bool
+	mainDomain       string
+	cancel           context.CancelFunc
+	context          context.Context
+	client           Client
+	callback         ResponseCallback
 }
 
-func NewCrawler(url *url.URL, options *Options) *Crawler {
-	mainDomain := strings.TrimPrefix(url.Host, "www.")
-
-	if url.Path == "" {
-		url.Path = "/"
-	}
-
-	storage := NewURLStorage()
-	storage.Add(url.String())
-
-	httpClient := NewClient(&ClientOptions{
-		UserAgent:        options.UserAgent,
-		BasicAuth:        options.BasicAuth,
-		BasicAuthDomains: []string{mainDomain, "www." + mainDomain},
-		AuthUser:         options.AuthUser,
-		AuthPass:         options.AuthPass,
-	})
-
-	qctx, cancelQueue := context.WithCancel(context.Background())
-	q := NewQueue(qctx)
-
-	robotsChecker := NewRobotsChecker(httpClient, options.UserAgent)
-
-	sitemapChecker := NewSitemapChecker(httpClient, options.MaxPageReports)
-	qStream := make(chan *RequestMessage)
-	ctx, cancel := context.WithCancel(context.Background())
-
-	c := &Crawler{
-		url:                 url,
-		options:             options,
-		queue:               q,
-		storage:             storage,
-		sitemapStorage:      NewURLStorage(),
-		sitemapChecker:      sitemapChecker,
-		robotsChecker:       robotsChecker,
-		allowedDomains:      map[string]bool{mainDomain: true, "www." + mainDomain: true},
-		mainDomain:          mainDomain,
-		prStream:            make(chan *models.PageReportMessage),
-		qStream:             qStream,
-		httpCrawler:         New(httpClient, qStream),
-		cancel:              cancel,
-		crawling:            true,
-		client:              httpClient,
-		externalLinksStatus: make(map[string]int),
-	}
-
-	go c.queueStreamer(qctx)
-	go func() {
-		defer func() {
-			cancelQueue()
-			cancel()
-		}()
-
-		if !c.robotsChecker.IsBlocked(c.url) || c.options.IgnoreRobotsTxt {
-			c.queue.Push(&RequestMessage{URL: c.url.String()})
-		}
-
-		c.setupSitemaps()
-		c.crawl(ctx)
-	}()
-
-	return c
+type ClientResponse struct {
+	Response *http.Response
+	TTFB     int
 }
 
-// Returns the PageReportMessage channel that streams all generated PageReports
-// into a PageReportMessage struct.
-func (c *Crawler) Stream() <-chan *models.PageReportMessage {
-	return c.prStream
+type RequestMessage struct {
+	URL          *url.URL
+	IgnoreDomain bool
+	Method       Method
+	Data         interface{}
 }
 
-// Polls URLs from the queue and sends them into the qStream channel.
-// queueStreamer shuts down when the ctx context is done.
-func (c *Crawler) queueStreamer(ctx context.Context) {
-	defer close(c.qStream)
+type ResponseMessage struct {
+	URL       *url.URL
+	Response  *http.Response
+	Error     error
+	TTFB      int
+	Blocked   bool
+	InSitemap bool
+	Timeout   bool
+	Data      interface{}
+}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case c.qStream <- c.queue.Poll():
-		}
+func NewCrawler(parsedURL *url.URL, options *Options, client Client) *Crawler {
+	mainDomain := strings.TrimPrefix(parsedURL.Host, "www.")
+
+	robotsChecker := NewRobotsChecker(client)
+	sitemapChecker := NewSitemapChecker(client, options.CrawlLimit)
+
+	ctx, cancel := context.WithTimeout(context.Background(), crawlerTimeout*time.Hour)
+
+	return &Crawler{
+		status:         Status{Crawling: true},
+		url:            parsedURL,
+		options:        options,
+		queue:          NewQueue(),
+		storage:        NewURLStorage(),
+		sitemapStorage: NewURLStorage(),
+		sitemapChecker: sitemapChecker,
+		robotsChecker:  robotsChecker,
+		allowedDomains: map[string]bool{mainDomain: true, "www." + mainDomain: true},
+		mainDomain:     mainDomain,
+		cancel:         cancel,
+		context:        ctx,
+		client:         client,
 	}
+}
+
+// OnResponse sets the callback that the crawler will call for every response.
+func (c *Crawler) OnResponse(r ResponseCallback) {
+	c.callback = r
 }
 
 // Crawl starts crawling an URL and sends pagereports of the crawled URLs
 // through the pr channel. It will end when there are no more URLs to crawl
 // or the MaxPageReports limit is hit.
-func (c *Crawler) crawl(ctx context.Context) {
-	defer close(c.prStream)
+func (c *Crawler) Start() {
+	defer c.queue.Done()
+	defer c.cancel() // cancel the consumers so all channels are closed.
+
+	c.setupSitemaps()
 
 	if c.sitemapExists && c.options.CrawlSitemap {
 		c.sitemapChecker.ParseSitemaps(c.sitemaps, c.loadSitemapURLs)
@@ -160,10 +152,17 @@ func (c *Crawler) crawl(ctx context.Context) {
 		return
 	}
 
-	for rm := range c.httpCrawler.Crawl(ctx) {
-		err := c.handleResponse(rm)
-		if err != nil {
-			log.Printf("handleResponse %s: Error %v", rm.URL, err)
+	for rm := range c.crawl() {
+		c.queue.Ack(rm.URL.String())
+
+		rm.InSitemap = c.sitemapStorage.Seen(rm.URL.String())
+		rm.Blocked = c.robotsChecker.IsBlocked(rm.URL)
+		rm.Timeout = rm.Error != nil
+
+		c.status.Crawled++
+
+		if c.callback != nil {
+			c.callback(rm)
 		}
 
 		if !c.queue.Active() && c.options.CrawlSitemap && !sitemapLoaded {
@@ -171,279 +170,62 @@ func (c *Crawler) crawl(ctx context.Context) {
 			sitemapLoaded = true
 		}
 
-		if !c.queue.Active() || c.responseCounter >= c.options.MaxPageReports {
+		if !c.queue.Active() || c.status.Crawled >= c.options.CrawlLimit {
 			break
 		}
 	}
 }
 
-// handleResponse handles the crawler response messages.
-// It creates a new PageReport and adds the new URLs to the crawler queue.
-func (c *Crawler) handleResponse(r *ResponseMessage) error {
-	c.crawlLock.RLock()
-	defer c.crawlLock.RUnlock()
-
-	c.queue.Ack(r.URL)
-
-	parsedURL, err := url.Parse(r.URL)
-	if err != nil {
-		return err
+// AddRequest processes a request message for the crawler.
+// It checks if the URL has already been visited, validates the domain and checks
+// if it is blocked in the the robots.txt rules. It returns an error if any of the checks
+// fails. Finally, it adds the request to the processing queue.
+func (c *Crawler) AddRequest(r *RequestMessage) error {
+	if c.storage.Seen(r.URL.String()) {
+		return ErrVisited
 	}
 
-	if r.Error != nil {
-		c.prStream <- &models.PageReportMessage{
-			Crawled:    c.responseCounter,
-			Crawling:   c.crawling,
-			Discovered: c.queue.Count(),
-			HtmlNode:   &html.Node{},
-			Header:     &http.Header{},
-			PageReport: &models.PageReport{
-				URL:       r.URL,
-				ParsedURL: parsedURL,
-				Crawled:   false,
-				Timeout:   true,
-			},
-		}
+	c.storage.Add(r.URL.String())
 
-		return r.Error
+	if !c.domainIsAllowed(r.URL.Host) && !r.IgnoreDomain {
+		return ErrDomainNotAllowed
 	}
 
-	defer r.Response.Body.Close()
-
-	pageReport, htmlNode, err := NewFromHTTPResponse(r.Response)
-	if err != nil {
-		return err
+	if !c.options.IgnoreRobotsTxt && c.robotsChecker.IsBlocked(r.URL) {
+		return ErrBlockedByRobotstxt
 	}
 
-	pageReport.Depth = r.Depth
-	pageReport.BlockedByRobotstxt = c.robotsChecker.IsBlocked(parsedURL)
-	pageReport.InSitemap = c.sitemapStorage.Seen(r.URL)
-	pageReport.Crawled = true
-
-	c.responseCounter++
-
-	urls := []*url.URL{}
-	if c.options.FollowNofollow || !pageReport.Nofollow {
-		crawlable := [][]*url.URL{
-			c.getCrawlableLinks(pageReport),
-			c.getResourceURLs(pageReport),
-			c.getCrawlableURLs(pageReport),
-		}
-
-		for _, c := range crawlable {
-			urls = append(urls, c...)
-		}
-	}
-
-	for _, t := range urls {
-		if c.storage.Seen(t.String()) {
-			continue
-		}
-
-		c.storage.Add(t.String())
-
-		if !c.options.IgnoreRobotsTxt && c.robotsChecker.IsBlocked(t) {
-			c.prStream <- &models.PageReportMessage{
-				Crawled:    c.responseCounter,
-				Crawling:   c.crawling,
-				Discovered: c.queue.Count(),
-				HtmlNode:   htmlNode,
-				Header:     &r.Response.Header,
-				PageReport: &models.PageReport{
-					URL:                t.String(),
-					ParsedURL:          t,
-					Crawled:            false,
-					BlockedByRobotstxt: true,
-				},
-			}
-
-			continue
-		}
-
-		c.queue.Push(&RequestMessage{URL: t.String(), Depth: pageReport.Depth + 1})
-	}
-
-	if c.options.CheckExternalLinks {
-		// Check external links status code
-		for i, e := range pageReport.ExternalLinks {
-			status, ok := c.externalLinksStatus[e.URL]
-			if ok {
-				pageReport.ExternalLinks[i].StatusCode = status
-				continue
-			}
-
-			resp, err := c.client.Head(e.URL)
-			if err != nil {
-				continue
-			}
-			c.externalLinksStatus[e.URL] = resp.StatusCode
-			pageReport.ExternalLinks[i].StatusCode = resp.StatusCode
-		}
-	}
-
-	if !pageReport.Noindex || c.options.IncludeNoindex {
-		c.prStream <- &models.PageReportMessage{
-			PageReport: pageReport,
-			HtmlNode:   htmlNode,
-			Header:     &r.Response.Header,
-			Crawled:    c.responseCounter,
-			Crawling:   c.crawling,
-			Discovered: c.queue.Count(),
-		}
-	}
+	c.queue.Push(r)
 
 	return nil
 }
 
-// Returns true if the crawler is allowed to crawl the domain, checking the allowedDomains slice.
-// If the AllowSubdomains option is set, returns true the given domain is a subdomain of the
-// crawlers's base domain.
-func (c *Crawler) domainIsAllowed(s string) bool {
-	_, ok := c.allowedDomains[s]
-	if ok {
-		return true
-	}
+// GetStatus returns the current cralwer status.
+func (c *Crawler) GetStatus() Status {
+	c.status.Discovered = c.queue.Count()
+	c.status.Crawling = c.context.Err() == nil
 
-	if c.options.AllowSubdomains && strings.HasSuffix(s, c.mainDomain) {
-		return true
-	}
-
-	return false
+	return c.status
 }
 
-// Callback to load sitemap URLs into the sitemap storage
-func (c *Crawler) loadSitemapURLs(u string) {
-	l, err := url.Parse(u)
-	if err != nil {
-		return
-	}
-
-	if l.Path == "" {
-		l.Path = "/"
-	}
-
-	c.sitemapStorage.Add(l.String())
-}
-
-// queueSitemapURLs loops through the sitemap's URLs, adding any unseen URLs to the crawler's queue.
-func (c *Crawler) queueSitemapURLs() {
-	c.sitemapStorage.Iterate(func(v string) {
-		if !c.storage.Seen(v) {
-			c.storage.Add(v)
-			c.queue.Push(&RequestMessage{URL: v})
-		}
-	})
-}
-
-// Returns true if the sitemap.xml file exists
+// Returns true if the sitemap.xml file exists.
 func (c *Crawler) SitemapExists() bool {
 	return c.sitemapExists
 }
 
-// Returns true if the robots.txt file exists
+// Returns true if the robots.txt file exists.
 func (c *Crawler) RobotstxtExists() bool {
 	return c.robotsChecker.Exists(c.url)
 }
 
-// Returns true if any of the website's sitemaps is blocked in the robots.txt file
+// Returns true if any of the website's sitemaps is blocked in the robots.txt file.
 func (c *Crawler) SitemapIsBlocked() bool {
 	return c.sitemapIsBlocked
-}
-
-// Returns a slice with all the crawlable Links from the PageReport's links.
-// URLs extracted from internal Links and ExternalLinks are crawlable only if the domain name is allowed and
-// if they don't have the "nofollow" attribute. If they have the "nofollow" attribute, they are also considered
-// crawlable if the crawler's FollowNofollow option is enabled.
-func (c *Crawler) getCrawlableLinks(p *models.PageReport) []*url.URL {
-	var urls []*url.URL
-
-	links := append(p.Links, p.ExternalLinks...)
-	for _, l := range links {
-		if l.ParsedURL.Host == c.url.Host && !strings.HasPrefix(l.ParsedURL.Path, c.url.Path) {
-			continue
-		}
-
-		if !c.domainIsAllowed(l.ParsedURL.Host) {
-			continue
-		}
-
-		if l.NoFollow && !c.options.FollowNofollow {
-			continue
-		}
-
-		urls = append(urls, l.ParsedURL)
-	}
-
-	return urls
-}
-
-// Returns a slice containing all the resource URLs from a PageReport.
-// The resource URLs are always considered crawlable.
-func (c *Crawler) getResourceURLs(p *models.PageReport) []*url.URL {
-	var urls []*url.URL
-	var resources []string
-
-	for _, l := range p.Images {
-		resources = append(resources, l.URL)
-	}
-
-	resources = append(resources, p.Scripts...)
-	resources = append(resources, p.Styles...)
-	resources = append(resources, p.Audios...)
-	resources = append(resources, p.Videos...)
-
-	for _, v := range resources {
-		t, err := url.Parse(v)
-		if err != nil {
-			continue
-		}
-		urls = append(urls, t)
-	}
-
-	return urls
-}
-
-// Returns a slice of crawlable URLs extracted from the Hreflangs, Iframes,
-// Redirect URLs and Canonical URLs found in the PageReport.
-// The URLs are considered crawlable only if its domain is allowed by the crawler.
-func (c *Crawler) getCrawlableURLs(p *models.PageReport) []*url.URL {
-	var urls []*url.URL
-	var resources []string
-
-	for _, l := range p.Hreflangs {
-		resources = append(resources, l.URL)
-	}
-
-	resources = append(resources, p.Iframes...)
-
-	if p.RedirectURL != "" {
-		resources = append(resources, p.RedirectURL)
-	}
-
-	if p.Canonical != "" {
-		resources = append(resources, p.Canonical)
-	}
-
-	for _, r := range resources {
-		parsed, err := url.Parse(r)
-		if err != nil {
-			continue
-		}
-
-		if c.domainIsAllowed(parsed.Host) {
-			urls = append(urls, parsed)
-		}
-	}
-
-	return urls
 }
 
 // Stops the cralwer by canceling the cralwer context.
 func (c *Crawler) Stop() {
 	c.cancel()
-	c.crawlLock.Lock()
-	c.crawling = false
-	c.crawlLock.Unlock()
 }
 
 // setupSitemaps checks if any sitemap exists for the crawler's url. It checks the robots file
@@ -475,4 +257,119 @@ func (c *Crawler) setupSitemaps() {
 
 	c.sitemaps = nonBlockedSitemaps
 	c.sitemapExists = c.sitemapChecker.SitemapExists(sitemaps)
+}
+
+// crawl starts the request consumers in goroutines and polls URLs from the queue so they
+// can be requested concurrently.
+func (c *Crawler) crawl() <-chan *ResponseMessage {
+	reqStream := make(chan *RequestMessage)
+	respStream := make(chan *ResponseMessage)
+
+	wg := new(sync.WaitGroup)
+	wg.Add(consumerThreads)
+
+	// Starts the consumers that will make the client requests
+	for i := 0; i < consumerThreads; i++ {
+		go func() {
+			defer wg.Done()
+			c.consumer(reqStream, respStream)
+		}()
+	}
+
+	// Polls URLs from the queue and send them to the requests stream so they can
+	// be consumed. Waits for all the consumers to finish before closing the channels.
+	go func() {
+		defer close(reqStream)
+		defer close(respStream)
+		defer wg.Wait()
+
+		for {
+			select {
+			case <-c.context.Done():
+				return
+			case reqStream <- c.queue.Poll():
+			}
+		}
+	}()
+
+	return respStream
+}
+
+// Consumer gets URLs from the reqStream until the context is cancelled.
+// It adds a random delay between client calls.
+func (c *Crawler) consumer(reqStream <-chan *RequestMessage, respStream chan<- *ResponseMessage) {
+	for {
+		select {
+		case requestMessage := <-reqStream:
+			// Add random delay to avoid overwhelming the servers with requests.
+			time.Sleep(time.Duration(rand.Intn(randomDelay)) * time.Millisecond)
+
+			rm := &ResponseMessage{
+				URL:  requestMessage.URL,
+				Data: requestMessage.Data,
+			}
+
+			r := &ClientResponse{}
+			switch requestMessage.Method {
+			case GET:
+				r, rm.Error = c.client.Get(requestMessage.URL.String())
+			case HEAD:
+				r, rm.Error = c.client.Head(requestMessage.URL.String())
+			}
+
+			if rm.Error == nil {
+				rm.Response = r.Response
+				rm.TTFB = r.TTFB
+			}
+
+			respStream <- rm
+		case <-c.context.Done():
+			return
+		}
+	}
+}
+
+// Callback to load sitemap URLs into the sitemap storage.
+func (c *Crawler) loadSitemapURLs(u string) {
+	l, err := url.Parse(u)
+	if err != nil {
+		return
+	}
+
+	if l.Path == "" {
+		l.Path = "/"
+	}
+
+	c.sitemapStorage.Add(l.String())
+}
+
+// queueSitemapURLs loops through the sitemap's URLs, adding any unseen URLs to the crawler's queue.
+func (c *Crawler) queueSitemapURLs() {
+	c.sitemapStorage.Iterate(func(v string) {
+		if !c.storage.Seen(v) {
+			c.storage.Add(v)
+			u, err := url.Parse(v)
+			if err != nil {
+				return
+			}
+
+			c.queue.Push(&RequestMessage{URL: u})
+		}
+	})
+}
+
+// Returns true if the crawler is allowed to crawl the domain, checking the allowedDomains slice.
+// If the AllowSubdomains option is set, returns true the given domain is a subdomain of the
+// crawlers's base domain.
+func (c *Crawler) domainIsAllowed(d string) bool {
+	_, ok := c.allowedDomains[d]
+	if ok {
+		return true
+	}
+
+	if c.options.AllowSubdomains && strings.HasSuffix(d, c.mainDomain) {
+		return true
+	}
+
+	return false
 }

@@ -3,8 +3,11 @@ package services
 import (
 	"database/sql"
 	"log"
+	"net/http"
+	"time"
 
 	"github.com/stjudewashere/seonaut/internal/config"
+	"github.com/stjudewashere/seonaut/internal/crawler"
 	"github.com/stjudewashere/seonaut/internal/issues/multipage"
 	"github.com/stjudewashere/seonaut/internal/issues/page"
 	"github.com/stjudewashere/seonaut/internal/repository"
@@ -192,25 +195,35 @@ func (c *Container) InitExportService() {
 
 // Create Crawler service.
 func (c *Container) InitCrawlerService() {
+	httpClient := &http.Client{
+		Timeout: ClientTimeout * time.Second,
+		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	client := crawler.NewBasicClient(&crawler.ClientOptions{
+		UserAgent: c.Config.Crawler.Agent,
+	}, httpClient)
+
 	crawlerServices := CrawlerServicesContainer{
-		Broker:        c.PubSubBroker,
-		ReportManager: c.ReportManager,
-		Config:        c.Config.Crawler,
+		Broker:         c.PubSubBroker,
+		ReportManager:  c.ReportManager,
+		CrawlerHandler: NewCrawlerHandler(c.pageReportRepository, c.PubSubBroker, c.ReportManager, client),
+		Config:         c.Config.Crawler,
 	}
 	storage := &struct {
 		*repository.CrawlRepository
-		*repository.PageReportRepository
 		*repository.IssueRepository
 	}{
 		c.crawlRepository,
-		c.pageReportRepository,
 		c.issueRepository,
 	}
 
 	c.CrawlerService = NewCrawlerService(storage, crawlerServices)
 }
 
-// Create the dashboard service.
+// Create the dashboCallbackBuilderard service.
 func (c *Container) InitDashboardService() {
 	c.DashboardService = NewDashboardService(c.dashboardRepository)
 }

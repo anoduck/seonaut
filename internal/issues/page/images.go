@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/antchfx/htmlquery"
 	"github.com/stjudewashere/seonaut/internal/issues/errors"
 	"github.com/stjudewashere/seonaut/internal/models"
 
@@ -75,6 +76,60 @@ func NewLargeImageReporter() *models.PageIssueReporter {
 
 	return &models.PageIssueReporter{
 		ErrorType: errors.ErrorLargeImage,
+		Callback:  c,
+	}
+}
+
+// Returns a report_manager.PageIssueReporter with a callback function to check
+// if a page has the noimageindex rule preventing images of being indexed by search engines.
+func NewNoImageIndexReporter() *models.PageIssueReporter {
+	c := func(pageReport *models.PageReport, htmlNode *html.Node, header *http.Header) bool {
+		if !pageReport.Crawled {
+			return false
+		}
+
+		if pageReport.MediaType != "text/html" {
+			return false
+		}
+
+		if strings.Contains(pageReport.Robots, "noimageindex") {
+			return true
+		}
+
+		return false
+	}
+
+	return &models.PageIssueReporter{
+		ErrorType: errors.ErrorNoImageIndex,
+		Callback:  c,
+	}
+}
+
+// Returns a report_manager.PageIssueReporter with a callback function to check
+// if a page has missing img elements in Pictures.
+func NewMissingImgTagInPictureReporter() *models.PageIssueReporter {
+	c := func(pageReport *models.PageReport, htmlNode *html.Node, header *http.Header) bool {
+		if !pageReport.Crawled {
+			return false
+		}
+
+		if pageReport.MediaType != "text/html" {
+			return false
+		}
+
+		e := htmlquery.Find(htmlNode, "//picture")
+		for _, n := range e {
+			images := htmlquery.Find(n, "//img")
+			if len(images) == 0 {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	return &models.PageIssueReporter{
+		ErrorType: errors.ErrorMissingImgElement,
 		Callback:  c,
 	}
 }

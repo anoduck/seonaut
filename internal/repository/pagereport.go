@@ -47,9 +47,10 @@ func (ds *PageReportRepository) SavePageReport(r *models.PageReport, cid int64) 
 			crawled,
 			in_sitemap,
 			depth,
-			body_hash
+			body_hash,
+			ttfb
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	stmt, err := ds.DB.Prepare(query)
 	if err != nil {
@@ -83,6 +84,7 @@ func (ds *PageReportRepository) SavePageReport(r *models.PageReport, cid int64) 
 		r.InSitemap,
 		r.Depth,
 		r.BodyHash,
+		r.TTFB,
 	)
 	if err != nil {
 		return r, err
@@ -249,12 +251,12 @@ func (ds *PageReportRepository) SavePageReportVideos(r *models.PageReport, cid i
 		return nil
 	}
 
-	sqlString := "INSERT INTO videos (pagereport_id, url, crawl_id) values "
+	sqlString := "INSERT INTO videos (pagereport_id, url, poster, crawl_id) values "
 
 	v := []interface{}{}
 	for _, i := range r.Videos {
-		sqlString += "(?, ?, ?),"
-		v = append(v, r.Id, i, cid)
+		sqlString += "(?, ?, ?, ?),"
+		v = append(v, r.Id, i.URL, i.Poster, cid)
 	}
 	sqlString = sqlString[0 : len(sqlString)-1]
 	stmt, _ := ds.DB.Prepare(sqlString)
@@ -337,7 +339,8 @@ func (ds *PageReportRepository) FindAllPageReportsByCrawlId(cid int64) <-chan *m
 				crawled,
 				in_sitemap,
 				depth,
-				body_hash
+				body_hash,
+				ttfb
 			FROM pagereports
 			WHERE crawl_id = ?`
 
@@ -370,6 +373,7 @@ func (ds *PageReportRepository) FindAllPageReportsByCrawlId(cid int64) <-chan *m
 				&p.InSitemap,
 				&p.Depth,
 				&p.BodyHash,
+				&p.TTFB,
 			)
 			if err != nil {
 				log.Println(err)
@@ -414,7 +418,8 @@ func (ds *PageReportRepository) FindAllPageReportsByCrawlIdAndErrorType(cid int6
 				crawled,
 				in_sitemap,
 				depth,
-				body_hash
+				body_hash,
+				ttfb
 			FROM pagereports
 			WHERE crawl_id = ?
 			AND id IN (
@@ -454,6 +459,7 @@ func (ds *PageReportRepository) FindAllPageReportsByCrawlIdAndErrorType(cid int6
 				&p.InSitemap,
 				&p.Depth,
 				&p.BodyHash,
+				&p.TTFB,
 			)
 			if err != nil {
 				log.Println(err)
@@ -492,7 +498,8 @@ func (ds *PageReportRepository) FindPageReportById(rid int) models.PageReport {
 			crawled,
 			in_sitemap,
 			depth,
-			body_hash
+			body_hash,
+			ttfb
 		FROM pagereports
 		WHERE id = ?`
 
@@ -521,6 +528,7 @@ func (ds *PageReportRepository) FindPageReportById(rid int) models.PageReport {
 		&p.InSitemap,
 		&p.Depth,
 		&p.BodyHash,
+		&p.TTFB,
 	)
 	if err != nil {
 		log.Println(err)
@@ -622,23 +630,23 @@ func (ds *PageReportRepository) FindPageReportAudios(pageReport *models.PageRepo
 }
 
 // Find videos in an specific pagereport.
-func (ds *PageReportRepository) FindPageReportVideos(pageReport *models.PageReport, cid int64) []string {
-	videos := []string{}
+func (ds *PageReportRepository) FindPageReportVideos(pageReport *models.PageReport, cid int64) []models.Video {
+	videos := []models.Video{}
 
-	vrows, err := ds.DB.Query("SELECT url FROM videos WHERE pagereport_id = ?", pageReport.Id)
+	vrows, err := ds.DB.Query("SELECT url, poster FROM videos WHERE pagereport_id = ?", pageReport.Id)
 	if err != nil {
 		log.Println(err)
 	}
 
 	for vrows.Next() {
-		var url string
-		err = vrows.Scan(&url)
+		var video models.Video
+		err = vrows.Scan(&video.URL, &video.Poster)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 
-		videos = append(videos, url)
+		videos = append(videos, video)
 	}
 
 	return videos

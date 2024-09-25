@@ -212,3 +212,30 @@ ERROR_TIMEOUT_DESC: Pages that timed out when our crawler attempted to access th
 
 ERROR_UNDERSCORE_URL: URLs with underscore characters
 ERROR_UNDERSCORE_URL_DESC: It is usually not recommended to use underscore characters in URLs, as some search engines will ignore them and treat that part as a single word. Use a dash instead as a word separator character.
+
+ERROR_SLOW_TTFB: Slow Time to First Byte
+ERROR_SLOW_TTFB_DESC: A slow time to first byte can negatively impact the user experience and hurt SEO by causing longer page load times, as some search engines take page speed into consideration as a ranking factor.
+
+ERROR_HTTP_FORM: Forms on HTTP pages
+ERROR_HTTP_FORM_DESC: HTTP pages with forms. Having a form on an HTTP URL compromises security, reducing user trust and SEO rankings. Make sure your forms are on HTTPS pages.
+
+ERROR_INSECURE_FORM: Insecure forms
+ERROR_INSECURE_FORM_DESC: Pages that have forms with HTTP action URLs. A form with an HTTP action URL exposes data to interception, reduces trust, triggers browser warnings, and negatively impacts SEO rankings.
+
+ERROR_SPACE_URL: URLs that contain a space
+ERROR_SPACE_URL_DESC: Having a space character in the URL can cause indexing issues and broken links, negatively affecting SEO and user experience. Hyphens should be used as a word separator instead of spaces.
+
+ERROR_MULTIPLE_SLASHES: URLS with multiple slashes in the path
+ERROR_MULTIPLE_SLASHES_DESC: URLS with multiple consecutive forward slashes in the path. This can create confusion for search engines and users, potentially leading to indexing issues and a less clean, professional appearance.
+
+ERROR_NOIMAGEINDEX: Pages with the noimageindex rule
+ERROR_NOIMAGEINDEX_DESC: The noimageindex rule in the robots meta tag prevents images to be indexed by search engines. Reveiew these pages to ensure the images in this pages shouldn't be indexed.
+
+ERROR_PICTURE_MISSONG_IMG: Pages with pictures missing the img element
+ERROR_PICTURE_MISSONG_IMG_DESC: Pages that are using a picture HTML element which is missing the img element. This can cause images to not be properly displayed in the browser and cause search engine image indexation issues.
+
+ERROR_METAS_IN_BODY: Pages with meta tags in the document's body
+ERROR_METAS_IN_BODY_DESC: Pages that have meta tags in the document's body. The meta tags must be placed in the head section of the document, otherwise they may get ignored by browsers as well as search engines, causing indexability issues.
+
+ERROR_NOSNIPPET: Pages with the nosnippet directive
+ERROR_NOSNIPPET_DESC: The nosnippet or max-snippet:0 directives tell search engines not to display a text snippet or video preview in the search results. Review these pages to make sure this is the wanted behavior.

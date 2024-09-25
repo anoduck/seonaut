@@ -72,4 +72,13 @@ const (
 	ErrorExternalLinkBroken                      // Pages with brooken external links
 	ErrorTimeout                                 // Pages that timed out
 	ErrorUnderscoreURL                           // Pages wich URL has underscore characters
+	ErrorSlowTTFB                                // Pages with slow time to first byte
+	ErrorFormOnHTTP                              // Pages with forms on HTTP URLs
+	ErrorInsecureForm                            // Forms with HTTP action URLs
+	ErrorSpaceURL                                // URLS containing spaces
+	ErrorMultipleSlashes                         // URLS containing multiple slashes in their path
+	ErrorNoImageIndex                            // Pages with the noimageindex rule in the robots meta
+	ErrorMissingImgElement                       // Pages with Picture missing the img element
+	ErrorMetasInBody                             // Pages with meta tags in the document's body
+	ErrorNosnippet                               // Pages with the nosnippet directive
 )

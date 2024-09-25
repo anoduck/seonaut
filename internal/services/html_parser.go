@@ -1,4 +1,4 @@
-package crawler
+package services
 
 import (
 	"bytes"
@@ -33,17 +33,23 @@ func NewFromHTTPResponse(r *http.Response) (*models.PageReport, *html.Node, erro
 
 	b, err := io.ReadAll(bodyReader)
 	if err != nil {
-		return &models.PageReport{}, nil, err
+		return &models.PageReport{}, &html.Node{}, err
 	}
 
-	return NewHTMLParser(r.Request.URL, r.StatusCode, &r.Header, b)
+	return NewHTMLParser(r.Request.URL, r.StatusCode, &r.Header, b, r.ContentLength)
 }
 
 // Return a new PageReport.
-func NewHTMLParser(u *url.URL, status int, headers *http.Header, body []byte) (*models.PageReport, *html.Node, error) {
+func NewHTMLParser(u *url.URL, status int, headers *http.Header, body []byte, contentLength int64) (*models.PageReport, *html.Node, error) {
 	parser, err := newParser(u, headers, body)
 	if err != nil {
-		return nil, nil, err
+		log.Println("newParser error!")
+		return &models.PageReport{}, &html.Node{}, err
+	}
+
+	size := int64(len(body))
+	if size == 0 && contentLength > size {
+		size = contentLength
 	}
 
 	pageReport := models.PageReport{
@@ -51,7 +57,7 @@ func NewHTMLParser(u *url.URL, status int, headers *http.Header, body []byte) (*
 		ParsedURL:   u,
 		StatusCode:  status,
 		ContentType: headers.Get("Content-Type"),
-		Size:        len(body),
+		Size:        size,
 	}
 
 	pageReport.MediaType, _, err = mime.ParseMediaType(pageReport.ContentType)
@@ -72,8 +78,8 @@ func NewHTMLParser(u *url.URL, status int, headers *http.Header, body []byte) (*
 		pageReport.Refresh = parser.htmlMetaRefresh()
 		pageReport.RedirectURL = parser.htmlMetaRefreshURL()
 		pageReport.Robots = parser.robots()
-		pageReport.Noindex = strings.Contains(pageReport.Robots, "noindex")
-		pageReport.Nofollow = strings.Contains(pageReport.Robots, "nofollow")
+		pageReport.Noindex = containsAny(pageReport.Robots, "noindex", "none")
+		pageReport.Nofollow = containsAny(pageReport.Robots, "nofollow", "none")
 		pageReport.H1 = parser.htmlH1()
 		pageReport.H2 = parser.htmlH2()
 		pageReport.Canonical = parser.canonical()
@@ -167,4 +173,15 @@ func hashString(input []byte) (string, error) {
 	hashString := hex.EncodeToString(hashSum)
 
 	return hashString, nil
+}
+
+// containsAny checks if a string contains any of the substrings.
+func containsAny(s string, substrings ...string) bool {
+	for _, substr := range substrings {
+		if strings.Contains(s, substr) {
+			return true
+		}
+	}
+
+	return false
 }

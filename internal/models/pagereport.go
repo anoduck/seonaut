@@ -26,13 +26,13 @@ type PageReport struct {
 	ExternalLinks      []Link
 	Words              int
 	Hreflangs          []Hreflang
-	Size               int
+	Size               int64
 	Images             []Image
 	Scripts            []string
 	Styles             []string
 	Iframes            []string
 	Audios             []string
-	Videos             []string
+	Videos             []Video
 	BlockedByRobotstxt bool
 	Crawled            bool
 	InSitemap          bool
@@ -40,4 +40,5 @@ type PageReport struct {
 	Depth              int
 	BodyHash           string
 	Timeout            bool
+	TTFB               int
 }

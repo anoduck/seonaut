@@ -2,6 +2,7 @@ package page_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stjudewashere/seonaut/internal/issues/errors"
@@ -202,5 +203,102 @@ func TestNonCanonicalInSitemapIssues(t *testing.T) {
 
 	if reportsIssue == false {
 		t.Errorf("TestNonCanonicalInSitemapIssues: reportsIssue should be true")
+	}
+}
+
+// Test the NewMetasInBodyReporter with PageReport that does not have metas in the document's body.
+// The reporter should not report the issue.
+func TestMetasInBodyNoIssues(t *testing.T) {
+	pageReport := &models.PageReport{
+		Crawled:   true,
+		MediaType: "text/html",
+	}
+
+	reporter := page.NewMetasInBodyReporter()
+	if reporter.ErrorType != errors.ErrorMetasInBody {
+		t.Errorf("TestNoIssues: error type is not correct")
+	}
+
+	s := `<html><body></body</html>`
+	doc, err := html.Parse(strings.NewReader(s))
+	if err != nil {
+		t.Errorf("html.Parse: %v", err)
+	}
+
+	reportsIssue := reporter.Callback(pageReport, doc, &http.Header{})
+
+	if reportsIssue == true {
+		t.Errorf("TestMetasInBodyNoIssues: reportsIssue should be false")
+	}
+}
+
+// Test the NewMetasInBodyReporter with PageReport that has metas in the document's body.
+// The reporter should not report the issue.
+func TestMetasInBodyIssues(t *testing.T) {
+	pageReport := &models.PageReport{
+		Crawled:   true,
+		MediaType: "text/html",
+	}
+
+	reporter := page.NewMetasInBodyReporter()
+	if reporter.ErrorType != errors.ErrorMetasInBody {
+		t.Errorf("TestNoIssues: error type is not correct")
+	}
+
+	s := `<html><body><meta name="robots" content="noindex, nofollow" /></body</html>`
+	doc, err := html.Parse(strings.NewReader(s))
+	if err != nil {
+		t.Errorf("html.Parse: %v", err)
+	}
+
+	reportsIssue := reporter.Callback(pageReport, doc, &http.Header{})
+
+	if reportsIssue == false {
+		t.Errorf("TestMetasInBodyIssues: reportsIssue should be true")
+	}
+}
+
+// Test the NewNosnippetReporter with PageReport that does not have the nosnippet directive.
+// The reporter should not report the issue.
+func TestNosnippetNoIssues(t *testing.T) {
+	pageReport := &models.PageReport{
+		Crawled:   true,
+		MediaType: "text/html",
+	}
+
+	reporter := page.NewNosnippetReporter()
+	if reporter.ErrorType != errors.ErrorNosnippet {
+		t.Errorf("TestNoIssues: error type is not correct")
+	}
+
+	reportsIssue := reporter.Callback(pageReport, &html.Node{}, &http.Header{})
+	if reportsIssue == true {
+		t.Errorf("TestNosnippetNoIssues: reportsIssue should be false")
+	}
+}
+
+// Test the NewNosnippetReporter with PageReport that has the nosnippet directive.
+// The reporter should report the issue.
+func TestNosnippetIssues(t *testing.T) {
+	pageReport := &models.PageReport{
+		Crawled:   true,
+		MediaType: "text/html",
+		Robots:    "nosnippet",
+	}
+
+	reporter := page.NewNosnippetReporter()
+	if reporter.ErrorType != errors.ErrorNosnippet {
+		t.Errorf("TestNoIssues: error type is not correct")
+	}
+
+	reportsIssue := reporter.Callback(pageReport, &html.Node{}, &http.Header{})
+	if reportsIssue == false {
+		t.Errorf("TestNosnippetIssues nosnippet: reportsIssue should be true")
+	}
+
+	pageReport.Robots = "max-snippet:0"
+	reportsIssue = reporter.Callback(pageReport, &html.Node{}, &http.Header{})
+	if reportsIssue == false {
+		t.Errorf("TestNosnippetIssues max-snippet: reportsIssue should be true")
 	}
 }

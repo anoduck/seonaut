@@ -32,6 +32,8 @@ func GetAllReporters() []*models.PageIssueReporter {
 		NewCanonicalRelativeURLReporter(),
 		NewCanonicalMismatch(),
 		NewDepthReporter(),
+		NewNosnippetReporter(),
+		NewMetasInBodyReporter(),
 
 		// Add link issue reporters
 		NewTooManyLinksReporter(),
@@ -46,6 +48,8 @@ func GetAllReporters() []*models.PageIssueReporter {
 		NewAltTextReporter(),
 		NewLongAltTextReporter(),
 		NewLargeImageReporter(),
+		NewNoImageIndexReporter(),
+		NewMissingImgTagInPictureReporter(),
 
 		// Add language issue reporters
 		NewInvalidLangReporter(),
@@ -75,5 +79,14 @@ func GetAllReporters() []*models.PageIssueReporter {
 
 		// Add URL issue reports
 		NewUnderscoreURLReporter(),
+		NewSpaceURLReporter(),
+		NewMultipleSlashesReporter(),
+
+		// Add Time To Firts Byte reporter
+		NewSlowTTFBReporter(),
+
+		// Add form reporters
+		NewFormOnHTTPReporter(),
+		NewInsecureFormReporter(),
 	}
 }

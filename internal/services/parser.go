@@ -1,8 +1,9 @@
-package crawler
+package services
 
 import (
 	"bytes"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,13 +24,23 @@ type Parser struct {
 }
 
 func newParser(url *url.URL, headers *http.Header, body []byte) (*Parser, error) {
+	if len(body) == 0 {
+		return &Parser{
+			ParsedURL: url,
+			Headers:   headers,
+			doc:       &html.Node{},
+		}, nil
+	}
+
 	utf8Body, err := charset.NewReader(bytes.NewReader(body), headers.Get("Content-Type"))
 	if err != nil {
+		log.Println(("utf8 reader error"))
 		return nil, err
 	}
 
-	doc, err := htmlquery.Parse(utf8Body)
+	doc, err := html.ParseWithOptions(utf8Body, html.ParseOptionEnableScripting(false))
 	if err != nil {
+		log.Println(("htmlquery parse error"))
 		return nil, err
 	}
 
@@ -108,7 +119,7 @@ func (p *Parser) htmlLang() string {
 // The title element in the head section defines the page title
 // ex. <title>Test Page Title</title>
 func (p *Parser) htmlTitle() string {
-	title, err := htmlquery.Query(p.doc, "//title")
+	title, err := htmlquery.Query(p.doc, "//head/title")
 	if err != nil || title == nil {
 		return ""
 	}
@@ -121,7 +132,7 @@ func (p *Parser) htmlTitle() string {
 // The description meta tag defines the page description
 // ex. <meta name="description" content="Test Page Description" />
 func (p *Parser) htmlMetaDescription() string {
-	description, err := htmlquery.Query(p.doc, "//meta[@name=\"description\"]/@content")
+	description, err := htmlquery.Query(p.doc, "//head/meta[@name=\"description\"]/@content")
 	if err != nil || description == nil {
 		return ""
 	}
@@ -135,7 +146,7 @@ func (p *Parser) htmlMetaDescription() string {
 // The refresh meta tag refreshes current page or redirects to a different one
 // ex. <meta http-equiv="refresh" content="0;URL='https://example.com/'" />
 func (p *Parser) htmlMetaRefresh() string {
-	refresh, err := htmlquery.Query(p.doc, "//meta[@http-equiv=\"refresh\"]/@content")
+	refresh, err := htmlquery.Query(p.doc, "//head//meta[@http-equiv=\"refresh\"]/@content")
 	if err != nil || refresh == nil {
 		return ""
 	}
@@ -164,7 +175,7 @@ func (p *Parser) htmlMetaRefreshURL() string {
 // The robots meta provides information to crawlers
 // ex. <meta name="robots" content="noindex, nofollow" />
 func (p *Parser) htmlMetaRobots() string {
-	robots, err := htmlquery.Query(p.doc, "//meta[@name=\"robots\"]/@content")
+	robots, err := htmlquery.Query(p.doc, "//head/meta[@name=\"robots\"]/@content")
 	if err != nil || robots == nil {
 		return ""
 	}
@@ -402,16 +413,24 @@ func (p *Parser) htmlAudios() []string {
 // <source src="video_file.webm" type="video/webm">
 // <source src="video_file.mp4" type="video/mp4">
 // </video>
-func (p *Parser) htmlVideos() []string {
-	videos := []string{}
+func (p *Parser) htmlVideos() []models.Video {
+	videos := []models.Video{}
 	v := htmlquery.Find(p.doc, "//video")
 	for _, n := range v {
+		poster := ""
+		posterAttr := htmlquery.SelectAttr(n, "poster")
+		if strings.TrimSpace(posterAttr) != "" {
+			pURL, err := p.absoluteURL(posterAttr)
+			if err == nil {
+				poster = pURL.String()
+			}
+		}
 
 		src := htmlquery.SelectAttr(n, "src")
 		if strings.TrimSpace(src) != "" {
 			url, err := p.absoluteURL(src)
 			if err == nil {
-				videos = append(videos, url.String())
+				videos = append(videos, models.Video{URL: url.String(), Poster: poster})
 			}
 		}
 
@@ -423,7 +442,7 @@ func (p *Parser) htmlVideos() []string {
 				continue
 			}
 
-			videos = append(videos, url.String())
+			videos = append(videos, models.Video{URL: url.String(), Poster: poster})
 		}
 	}
 
