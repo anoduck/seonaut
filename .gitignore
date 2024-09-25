@@ -14,3 +14,4 @@ bin/*
 web/static/*
 !web/static/favicon.ico
 !web/static/robots.txt
+mysql
