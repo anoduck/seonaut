@@ -23,6 +23,7 @@ EXPORT_VIEW: Export
 CRAWL_AUTH_VIEW: Project HTTP Basic Authentication
 EXPLORER: URL Explorer
 DELETE_ACCOUNT_VIEW: Delete Account
+ARCHIVE_VIEW: Archive Source Code
 
 ERROR_50x: Status 50x
 ERROR_50x_DESC: This kind of errors usually occour due to a server bug or missconfiguration, the affected pages don't load properly and show an error page instead, scaring your users and annoying search engines.
@@ -112,7 +113,7 @@ ERROR_BLOCKED: Blocked by robots.txt
 ERROR_BLOCKED_DESC: Pages blocked by robots.txt won't be crawled by search engines. Keep an eye on this list to make sure important pages are not being blocked.
 
 ERROR_ORPHAN: Orphan pages
-ERROR_ORPHAN_DESC: Pages that are not linked anywhere in your site, this means no visitors can access to it and may lead to lead to crawl wastage.
+ERROR_ORPHAN_DESC: Pages that are not linked anywhere in your site, this means no visitors can access to it and may lead to crawl wastage.
 
 NO_INDEX_IN_SITEMAP: Non-indexable pages are included in the sitemap
 NO_INDEX_IN_SITEMAP_DESC: Non-indexable pages should not be included in a sitemap, as this sends a mixed signal to the search engines. They can also slow down the crawling process and lead to incorrect indexing.
@@ -239,3 +240,12 @@ ERROR_METAS_IN_BODY_DESC: Pages that have meta tags in the document's body. The 
 
 ERROR_NOSNIPPET: Pages with the nosnippet directive
 ERROR_NOSNIPPET_DESC: The nosnippet or max-snippet:0 directives tell search engines not to display a text snippet or video preview in the search results. Review these pages to make sure this is the wanted behavior.
+
+ERROR_IMG_SIZE_ATTR: Pages containing images missing size attributes
+ERROR_IMG_SIZE_ATTR_DESC: Not setting the size attributes for images can cause layout shifts as the page loads, which can negatively impact user experience as well as SEO. Make sure your images have the corresponding size attributes in place.
+
+ERROR_INCORRECT_MEDIA_TYPE: URLs with incorrect media type
+ERROR_INCORRECT_MEDIA_TYPE_DESC: Having URLs with incorrect MIME types can hurt SEO by causing browsers to misinterpret or fail to render content, which can impact user experience and search engine indexing.
+
+ERROR_DUPLICATED_ID: Pages containing elements with duplicated IDs
+ERROR_DUPLICATED_ID_DESC: Having elements with duplicate IDs confuses assistive technologies and JavaScript, leading to navigation issues and unpredictable behavior. This could impact user experience and SEO. Make sure IDs are unique.

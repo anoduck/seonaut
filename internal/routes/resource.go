@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,14 +30,12 @@ func (h *resourceHandler) indexHandler(w http.ResponseWriter, r *http.Request) {
 
 	pid, err := strconv.Atoi(r.URL.Query().Get("pid"))
 	if err != nil {
-		log.Printf("serveResourcesView pid: %v\n", err)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	rid, err := strconv.Atoi(r.URL.Query().Get("rid"))
 	if err != nil {
-		log.Printf("serveResourcesView rid: %v\n", err)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -46,7 +43,6 @@ func (h *resourceHandler) indexHandler(w http.ResponseWriter, r *http.Request) {
 	eid := r.URL.Query().Get("eid")
 	ep := r.URL.Query().Get("ep")
 	if eid == "" && ep == "" {
-		log.Println("serveResourcesView: no eid or ep parameter set")
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -63,10 +59,13 @@ func (h *resourceHandler) indexHandler(w http.ResponseWriter, r *http.Request) {
 
 	pv, err := h.ProjectViewService.GetProjectView(pid, user.Id)
 	if err != nil {
-		log.Printf("serveResourcesView GetProjectView: %v\n", err)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+
+	pageReportView := h.ReportService.GetPageReport(rid, pv.Crawl.Id, tab, page)
+	isArchived := h.Container.ArchiveService.ArchiveExists(&pv.Project)
+	isTextMedia := strings.HasPrefix(pageReportView.PageReport.MediaType, "text/")
 
 	data := &struct {
 		PageReportView *models.PageReportView
@@ -74,12 +73,14 @@ func (h *resourceHandler) indexHandler(w http.ResponseWriter, r *http.Request) {
 		Eid            string
 		Ep             string
 		Tab            string
+		Archived       bool
 	}{
 		ProjectView:    pv,
 		Eid:            eid,
 		Ep:             ep,
 		Tab:            tab,
-		PageReportView: h.ReportService.GetPageReport(rid, pv.Crawl.Id, tab, page),
+		PageReportView: pageReportView,
+		Archived:       isArchived && isTextMedia,
 	}
 
 	pageView := &PageView{
@@ -89,4 +90,83 @@ func (h *resourceHandler) indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.Renderer.RenderTemplate(w, "resources", pageView)
+}
+
+// archiveHandler the HTTP request for the archive page. It loads the data from the
+// archive and displays the source code of the crawler's response for a specific resource.
+func (h *resourceHandler) archiveHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.CookieSession.GetUser(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/signout", http.StatusSeeOther)
+		return
+	}
+
+	pid, err := strconv.Atoi(r.URL.Query().Get("pid"))
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	rid, err := strconv.Atoi(r.URL.Query().Get("rid"))
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	eid := r.URL.Query().Get("eid")
+	ep := r.URL.Query().Get("ep")
+	if eid == "" && ep == "" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	tab := r.URL.Query().Get("t")
+	if tab == "" {
+		tab = "details"
+	}
+
+	pv, err := h.ProjectViewService.GetProjectView(pid, user.Id)
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	isArchived := h.Container.ArchiveService.ArchiveExists(&pv.Project)
+	if !isArchived {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	pageReportView := h.ReportService.GetPageReport(rid, pv.Crawl.Id, "default", 1)
+	isTextMedia := strings.HasPrefix(pageReportView.PageReport.MediaType, "text/")
+	if !isTextMedia {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	record := h.Container.ArchiveService.ReadArchiveRecord(&pv.Project, pageReportView.PageReport.URL)
+
+	data := &struct {
+		PageReportView *models.PageReportView
+		ProjectView    *models.ProjectView
+		Eid            string
+		Ep             string
+		Tab            string
+		ArchiveRecord  *models.ArchiveRecord
+	}{
+		ProjectView:    pv,
+		PageReportView: pageReportView,
+		Eid:            eid,
+		Ep:             ep,
+		Tab:            tab,
+		ArchiveRecord:  record,
+	}
+
+	pageView := &PageView{
+		Data:      data,
+		User:      *user,
+		PageTitle: "ARCHIVE_VIEW",
+	}
+
+	h.Renderer.RenderTemplate(w, "archive", pageView)
 }

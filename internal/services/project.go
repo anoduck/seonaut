@@ -9,6 +9,9 @@ import (
 )
 
 type (
+	ArchiveRemover interface {
+		DeleteArchive(*models.Project)
+	}
 	ProjectServiceRepository interface {
 		SaveProject(*models.Project, int)
 		DeleteProject(*models.Project)
@@ -21,12 +24,16 @@ type (
 	}
 
 	ProjectService struct {
-		repository ProjectServiceRepository
+		repository     ProjectServiceRepository
+		archiveRemover ArchiveRemover
 	}
 )
 
-func NewProjectService(r ProjectServiceRepository) *ProjectService {
-	return &ProjectService{repository: r}
+func NewProjectService(r ProjectServiceRepository, a ArchiveRemover) *ProjectService {
+	return &ProjectService{
+		repository:     r,
+		archiveRemover: a,
+	}
 }
 
 // SaveProject stores a new project.
@@ -72,11 +79,16 @@ func (s *ProjectService) DeleteProject(p *models.Project) {
 	go func() {
 		s.repository.DeleteProjectCrawls(p)
 		s.repository.DeleteProject(p)
+		s.archiveRemover.DeleteArchive(p)
 	}()
 }
 
 // Update project details.
 func (s *ProjectService) UpdateProject(p *models.Project) error {
+	if !p.Archive {
+		s.archiveRemover.DeleteArchive(p)
+	}
+
 	return s.repository.UpdateProject(p)
 }
 
@@ -86,5 +98,6 @@ func (s *ProjectService) DeleteAllUserProjects(user *models.User) {
 	for _, p := range projects {
 		s.repository.DeleteProjectCrawls(&p)
 		s.repository.DeleteProject(&p)
+		s.archiveRemover.DeleteArchive(&p)
 	}
 }
