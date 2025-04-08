@@ -478,5 +478,126 @@ func TestSrcset(t *testing.T) {
 			t.Errorf("pageReport image %d should be %s. Got: %s", n, i, pageReport.Images[n].URL)
 		}
 	}
+}
 
+func TestEmptyBody(t *testing.T) {
+	u, err := url.Parse(testURL)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	body := []byte("")
+	statusCode := 404
+	headers := &http.Header{
+		"Content-Type": []string{"text/html"},
+	}
+
+	pageReport, _, err := services.NewHTMLParser(u, statusCode, headers, body, int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if pageReport.StatusCode != statusCode {
+		t.Errorf("pageReport status code should be %d but received %d", statusCode, pageReport.StatusCode)
+	}
+}
+
+func TestBase(t *testing.T) {
+	u, err := url.Parse("https://example-base.com")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	body := []byte(
+		`<html>
+		<head><base href="https://example-base.com/test"></head>
+		<body>
+			<a href="/page.html">link</a>
+			<a href="../category/page.html">link 2</a>
+			<a href="https://external.com/page.html">link 2</a>
+		</body>
+	</html>`)
+	statusCode := 200
+	headers := &http.Header{
+		"Content-Type": []string{"text/html"},
+	}
+
+	pageReport, _, err := services.NewHTMLParser(u, statusCode, headers, body, int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(pageReport.Links) != 2 {
+		t.Fatal("wrong number of links with base URL")
+	}
+
+	if pageReport.Links[0].URL != "https://example-base.com/test/page.html" {
+		t.Errorf("Link with base URL does not match, got %s", pageReport.Links[0].URL)
+	}
+
+	if pageReport.Links[1].URL != "https://example-base.com/category/page.html" {
+		t.Errorf("Link with base URL does not match, got %s", pageReport.Links[1].URL)
+	}
+
+	if len(pageReport.ExternalLinks) != 1 {
+		t.Fatal("An external link with base URL was expected")
+	}
+
+	if pageReport.ExternalLinks[0].URL != "https://external.com/page.html" {
+		t.Errorf("External link with base URL does not match, got %s", pageReport.ExternalLinks[0].URL)
+	}
+}
+
+func TestBaseRelativeURL(t *testing.T) {
+	u, err := url.Parse(testURL)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	body := []byte(
+		`<html>
+		<head><base href="/test"></head>
+		<body>
+			<a href="/page.html">link</a>
+			<a href="https://example.com/page.html">link</a>
+			<a href="https://example.com/../category/page.html">link</a>
+			<a href="https://external.com/category/page.html">link</a>
+		</body>
+	</html>`)
+	statusCode := 200
+	headers := &http.Header{
+		"Content-Type": []string{"text/html"},
+	}
+
+	pageReport, _, err := services.NewHTMLParser(u, statusCode, headers, body, int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	table := []struct {
+		want string
+		got  string
+	}{
+		{"https://example.com/test/page.html", pageReport.Links[0].URL},
+		{"https://example.com/page.html", pageReport.Links[1].URL},
+		{"https://example.com/../category/page.html", pageReport.Links[2].URL},
+	}
+
+	if len(pageReport.Links) != len(table) {
+		t.Errorf("expected %d links but got %d", len(table), len(pageReport.Links))
+	}
+
+	for _, n := range table {
+		if n.got != n.want {
+			t.Errorf("Link with base URL %s does not match, got %s", n.want, n.got)
+		}
+	}
+
+	if len(pageReport.ExternalLinks) != 1 {
+		t.Fatal("Number of expected external links don't match")
+	}
+
+	if pageReport.ExternalLinks[0].URL != "https://external.com/category/page.html" {
+		t.Errorf("Link with base URL does not match, got %s", pageReport.ExternalLinks[0].URL)
+	}
 }

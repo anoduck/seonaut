@@ -3,11 +3,8 @@ package services
 import (
 	"database/sql"
 	"log"
-	"net/http"
-	"time"
 
 	"github.com/stjudewashere/seonaut/internal/config"
-	"github.com/stjudewashere/seonaut/internal/crawler"
 	"github.com/stjudewashere/seonaut/internal/issues/multipage"
 	"github.com/stjudewashere/seonaut/internal/issues/page"
 	"github.com/stjudewashere/seonaut/internal/repository"
@@ -32,6 +29,7 @@ type Container struct {
 	CrawlerService     *CrawlerService
 	Renderer           *Renderer
 	CookieSession      *CookieSession
+	ArchiveService     *ArchiveService
 
 	db                   *sql.DB
 	issueRepository      *repository.IssueRepository
@@ -47,6 +45,7 @@ func NewContainer(configFile string) *Container {
 	c := &Container{}
 	c.InitConfig(configFile)
 	c.InitDB()
+	c.InitArchiveService()
 	c.InitRepositories()
 	c.InitPubSubBroker()
 	c.InitIssueService()
@@ -162,7 +161,7 @@ func (c *Container) InitProjectService() {
 		c.crawlRepository,
 	}
 
-	c.ProjectService = NewProjectService(repository)
+	c.ProjectService = NewProjectService(repository, c.ArchiveService)
 
 	// UserService DeleteHooks are called when a user is deleted.
 	// Add a DeleteHook so it deletes all user projects and crawl
@@ -190,21 +189,11 @@ func (c *Container) InitExportService() {
 
 // Create Crawler service.
 func (c *Container) InitCrawlerService() {
-	httpClient := &http.Client{
-		Timeout: ClientTimeout * time.Second,
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	client := crawler.NewBasicClient(&crawler.ClientOptions{
-		UserAgent: c.Config.Crawler.Agent,
-	}, httpClient)
-
 	crawlerServices := CrawlerServicesContainer{
 		Broker:         c.PubSubBroker,
 		ReportManager:  c.ReportManager,
-		CrawlerHandler: NewCrawlerHandler(c.pageReportRepository, c.PubSubBroker, c.ReportManager, client),
+		CrawlerHandler: NewCrawlerHandler(c.pageReportRepository, c.PubSubBroker, c.ReportManager),
+		ArchiveService: c.ArchiveService,
 		Config:         c.Config.Crawler,
 	}
 	repository := &struct {
@@ -239,4 +228,8 @@ func (c *Container) InitRenderer() {
 // Create cookie session handler
 func (c *Container) InitCookieSession() {
 	c.CookieSession = NewCookieSession(c.userRepository)
+}
+
+func (c *Container) InitArchiveService() {
+	c.ArchiveService = NewArchiveService("archive")
 }

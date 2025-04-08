@@ -50,6 +50,7 @@ func GetAllReporters() []*models.PageIssueReporter {
 		NewLargeImageReporter(),
 		NewNoImageIndexReporter(),
 		NewMissingImgTagInPictureReporter(),
+		NewImgWithoutSizeReporter(),
 
 		// Add language issue reporters
 		NewInvalidLangReporter(),
@@ -65,6 +66,8 @@ func GetAllReporters() []*models.PageIssueReporter {
 
 		// Add content issue reporters
 		NewLittleContentReporter(),
+		NewIncorrectMediaType(),
+		NewDuplicatedId(),
 
 		// Add scheme issue reporters
 		NewHTTPSchemeReporter(),
