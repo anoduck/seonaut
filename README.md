@@ -18,14 +18,14 @@ A hosted version of SEOnaut is available at [seonaut.org](https://seonaut.org).
 
 SEOnaut is a web-based application built with the Go programming language and a MariaDB database for data storage. The frontend is designed for simplicity, using custom CSS and minimal vanilla JavaScript. Apache ECharts is used to provide an interactive dashboard experience.
 
-While it is possible to configure a custom database and compile SEOnaut manually, using the provided Docker files is recommended. These files simplify the setup process and eliminate the need for manual configuration, allowing for quicker and easier deployment.
+While it is possible to configure a custom database and compile SEOnaut manually, using the provided podman files is recommended. These files simplify the setup process and eliminate the need for manual configuration, allowing for quicker and easier deployment.
 
 ### Quick Start Guide
 
-To get started with SEOnaut, follow these steps to run it using Docker:
+To get started with using the podman fork SEOnaut, follow these steps to run it using Docker:
 
 1. **Install Podman**  
-   Ensure Podman is installed on your system. This can be achieved with most Linux distributions by using the respective package management system. If you are running debian or ubuntu you would use something like this to achieve podman installation `sudo apt install podman`, if you are using alpine linux it would look something like this `sudo apk add podman`. 
+   Ensure Podman is installed on your system. This can be achieved with most Linux distributions by using the respective package management system. If you are running debian or ubuntu you would use something like this to achieve podman installation `sudo apt install podman podman-compose`, if you are using alpine linux it would look something like this `sudo apk add podman podman-compose`.
 
 2. **Clone the Repository**  
    Clone the SEOnaut repository:
@@ -40,7 +40,7 @@ To get started with SEOnaut, follow these steps to run it using Docker:
 4. **Build and Run Docker Containers**  
    Run the following command to build and start the Docker containers:
    
-   `docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`
+   `podman-compose -f podman-compose.yml up -d --build`
 
 5. **Access the Application**  
    Once the containers are running, open your browser and visit:
